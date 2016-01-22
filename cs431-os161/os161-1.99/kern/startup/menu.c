@@ -437,6 +437,7 @@ static const char *opsmenu[] = {
 	"[sync]    Sync filesystems          ",
 	"[panic]   Intentional panic         ",
 	"[q]       Quit and shut down        ",
+	"[dth]	   Enable thread debugging  ",
 	NULL
 };
 
@@ -519,6 +520,17 @@ cmd_mainmenu(int n, char **a)
 	return 0;
 }
 
+static
+int
+set_dbflags(int n, char **a){
+	
+	(void)n;
+	(void)a;
+	dbflags = 0x0010;
+
+	return 0;
+}
+
 ////////////////////////////////////////
 //
 // Command table.
@@ -548,6 +560,7 @@ static struct {
 	{ "q",		cmd_quit },
 	{ "exit",	cmd_quit },
 	{ "halt",	cmd_quit },
+	{ "dth", 	set_dbflags },
 
 #if OPT_SYNCHPROBS
 	/* in-kernel synchronization problem(s) */
