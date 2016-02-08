@@ -51,13 +51,13 @@ TOOLPREFIX="cs431-"
 
 while [ "x$1" != x ]; do
     case "$1" in
-        --debug) DEBUG='-g';;
-        --ostree=*) OSTREE=`echo $1 | sed 's,^[^=]*=,,'`;;
+	--debug) DEBUG='-g';;
+	--ostree=*) OSTREE=`echo $1 | sed 's,^[^=]*=,,'`;;
   # UW Mod
   --toolprefix=*) TOOLPREFIX=`echo $1 | sed 's,^[^=]*=,,'`;;
 
-        --help|*)
-                more <<EOF
+	--help|*)
+		more <<EOF
 Usage: ./configure [options]
   where the options are:
     --help               Print this message.
@@ -101,7 +101,7 @@ EOF
 OK=0
 if $HOST_CC __conftest.c -o __conftest >/dev/null 2>&1; then
     if ./__conftest >/dev/null 2>&1; then
-        OK=1
+	OK=1
     fi
 fi
 
