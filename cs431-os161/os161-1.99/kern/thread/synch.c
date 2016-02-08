@@ -40,6 +40,8 @@
 #include <current.h>
 #include <synch.h>
 
+#include "opt-A1.h"
+
 ////////////////////////////////////////////////////////////
 //
 // Semaphore.
@@ -147,6 +149,7 @@ V(struct semaphore *sem)
 //
 // Lock.
 
+#if OPT_A1
 struct lock *
 lock_create(const char *name)
 {
@@ -156,6 +159,101 @@ lock_create(const char *name)
         if (lock == NULL) {
                 return NULL;
         }
+
+        lock->lk_name = kstrdup(name);
+        if (lock->lk_name == NULL) {
+                kfree(lock);
+                return NULL;
+        }
+
+        lock->lk_wchan = wchan_create(lock->lk_name);
+        if (lock->lk_wchan == NULL) {
+        kfree(lock->lk_name);
+        kfree(lock);
+        return NULL;
+        }
+
+        spinlock_init(&lock->lk_lock);
+        lock->lk_status = false;
+
+        lock->lk_holder = NULL;
+
+             
+        return lock;
+}
+
+void
+lock_destroy(struct lock *lock)
+{
+    KASSERT(lock != NULL);
+
+    spinlock_cleanup(&lock->lk_lock);
+    wchan_destroy(lock->lk_wchan);
+    
+    kfree(lock->lk_name);
+    kfree(lock);
+}
+
+void
+lock_acquire(struct lock *lock)
+{
+    KASSERT(lock != NULL);
+    KASSERT(curthread->t_in_interrupt == false);
+
+    spinlock_acquire(&lock->lk_lock);
+    while(lock->lk_status == true) {
+        wchan_lock(lock->lk_wchan);
+        spinlock_release(&lock->lk_lock);
+        wchan_sleep(lock->lk_wchan);
+        spinlock_acquire(&lock->lk_lock);
+    }
+
+    KASSERT(lock->lk_status == false);
+    lock->lk_status = true;
+    lock->lk_holder = curthread;
+    spinlock_release(&lock->lk_lock);
+}
+
+void
+lock_release(struct lock *lock)
+{
+    KASSERT(lock != NULL);
+    if(!lock_do_i_hold(lock)) {
+        return;
+    }
+
+
+    spinlock_acquire(&lock->lk_lock);
+
+    KASSERT(lock->lk_status == true);
+    lock->lk_status = false;
+    wchan_wakeone(lock->lk_wchan);
+    lock->lk_holder = NULL;
+
+    spinlock_release(&lock->lk_lock);
+}
+
+bool
+lock_do_i_hold(struct lock *lock)
+{
+        KASSERT(lock != NULL);
+        if (lock->lk_holder == curthread)
+             return true;
+        else
+             return false;
+}
+
+#else
+
+struct lock *
+lock_create(const char *name)
+{
+        struct lock *lock;
+
+        lock = kmalloc(sizeof(struct lock));
+        if (lock == NULL) {
+                return NULL
+;        }
 
         lock->lk_name = kstrdup(name);
         if (lock->lk_name == NULL) {
@@ -204,6 +302,8 @@ lock_do_i_hold(struct lock *lock)
 
         return true; // dummy until code gets written
 }
+
+#endif
 
 ////////////////////////////////////////////////////////////
 //

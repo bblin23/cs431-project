@@ -36,6 +36,8 @@
 
 
 #include <spinlock.h>
+ 
+#include "opt-A1.h"
 
 /*
  * Dijkstra-style semaphore.
@@ -72,11 +74,21 @@ void V(struct semaphore *);
  * The name field is for easier debugging. A copy of the name is
  * (should be) made internally.
  */
+#if OPT_A1
+struct lock {
+        char *lk_name;
+        struct wchan *lk_wchan;
+        struct spinlock lk_lock;
+        volatile bool lk_status;
+        struct thread *lk_holder;
+};
+#else
 struct lock {
         char *lk_name;
         // add what you need here
         // (don't forget to mark things volatile as needed)
 };
+#endif
 
 struct lock *lock_create(const char *name);
 void lock_acquire(struct lock *);

@@ -522,14 +522,16 @@ cmd_mainmenu(int n, char **a)
 
 static
 int
-set_dbflags(int n, char **a){
+cmd_dth(int n, char **a){
 	
 	(void)n;
 	(void)a;
-	dbflags = 0x0010;
+	dbflags = (dbflags | DB_THREADS);
 
 	return 0;
 }
+
+
 
 ////////////////////////////////////////
 //
@@ -560,7 +562,7 @@ static struct {
 	{ "q",		cmd_quit },
 	{ "exit",	cmd_quit },
 	{ "halt",	cmd_quit },
-	{ "dth", 	set_dbflags },
+	{ "dth", 	cmd_dth },
 
 #if OPT_SYNCHPROBS
 	/* in-kernel synchronization problem(s) */
