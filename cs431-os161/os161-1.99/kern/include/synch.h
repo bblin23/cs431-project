@@ -123,11 +123,20 @@ void lock_destroy(struct lock *);
  * (should be) made internally.
  */
 
+
+#if OPT_A1
+struct cv {
+        char *cv_name;
+        struct wchan *cv_wchan;
+};
+#else
 struct cv {
         char *cv_name;
         // add what you need here
         // (don't forget to mark things volatile as needed)
 };
+
+#endif
 
 struct cv *cv_create(const char *name);
 void cv_destroy(struct cv *);

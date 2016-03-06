@@ -45,6 +45,9 @@
 #include <syscall.h>
 #include <test.h>
 
+#include <copyinout.h>
+#include "opt-A2.h"
+
 /*
  * Load program "progname" and start running it in usermode.
  * Does not return except on error.
@@ -52,12 +55,21 @@
  * Calls vfs_open on progname and thus may destroy it.
  */
 int
-runprogram(char *progname)
+runprogram(char *progname, char** args)
 {
 	struct addrspace *as;
 	struct vnode *v;
 	vaddr_t entrypoint, stackptr;
 	int result;
+
+	//count the arguments
+#if OPT_A2
+    int argc;
+    for(argc = 0; args[argc] != NULL; ++argc);
+    //++argc;
+
+	char **argptr = (char**)kmalloc(sizeof(char*) * argc);
+#endif
 
 	/* Open the file. */
 	result = vfs_open(progname, O_RDONLY, 0, &v);
@@ -97,10 +109,74 @@ runprogram(char *progname)
 		return result;
 	}
 
+#if OPT_A2
+
+	int i, len, index;
+
+	index = 0;
+	/* First we copy all the strings into the stack, making sure that
+	the stackptr is always 8-byte aligned. */
+	while(args[i] != NULL){
+		char* the_string;
+		len = strlen(args[i]) + 1; // +1 for '\0'
+
+		int origlen = len;
+
+		//making sure stackptr is 8-byte aligned
+		if(len %4 != 0) 
+			len = len + (4 - len % 4);
+
+		the_string = kmalloc(sizeof(char) * len); //or sizeof(len)?
+		the_string = kstrdup(args[i]);			
+
+		/* We have to do this for loop only if somehow the null byte is lost or
+		kstrdup doesn't work the way it's intended. */
+		// for (i = 0; i < len; i++) {
+		// 	if (i >= origlen)
+		// 		the_string[i] = '\0';
+		// 	else
+		// 		the_string[i] = args[index][i];
+		// }
+
+		stackptr -= len;
+
+		result = copyout((const void *)the_string, (userptr_t)stackptr, (size_t) len);
+		if (result){
+			kprintf("runprogram - failed to copyout strings %d\n",result);
+			return result;
+		}
+
+		kfree(the_string);
+
+		// The pointers will point to the start of the strings in stack
+		argptr[index] = (char *)stackptr;
+
+		index++;
+	}
+
+	/* args[index] points to NULL, so allocate space on stack */
+	if (args[i] == NULL)
+		stackptr -= 4 * sizeof(char);
+
+	/* Now allocate and copyout the pointers to the strings in the stack */
+	for (int i = (index -1); i>= 0; i--){
+		stackptr = stackptr - sizeof(char*);
+		result = copyout((const void*)(argptr + i), (userptr_t)stackptr, (sizeof(char *)));
+		if(result) {
+			kprintf("runprogram - failed to copyout pointer %d, result %d", i, result);
+			return result;
+		}
+	}
+
+	/* stackptr and argv (second param) should point to the same place */
+	enter_new_process(index, (userptr_t) stackptr, 
+		stackptr, entrypoint);
+
+#else
 	/* Warp to user mode. */
 	enter_new_process(0 /*argc*/, NULL /*userspace addr of argv*/,
 			  stackptr, entrypoint);
-	
+#endif
 	/* enter_new_process does not return. */
 	panic("enter_new_process returned\n");
 	return EINVAL;
