@@ -111,23 +111,21 @@ runprogram(char *progname, char** args)
 
 #if OPT_A2
 
-	int i, len, index;
+	int len, index;
 
 	index = 0;
 	/* First we copy all the strings into the stack, making sure that
 	the stackptr is always 8-byte aligned. */
-	while(args[i] != NULL){
+	while(args[index] != NULL){
 		char* the_string;
-		len = strlen(args[i]) + 1; // +1 for '\0'
-
-		int origlen = len;
+		len = strlen(args[index]) + 1; // +1 for '\0'
 
 		//making sure stackptr is 8-byte aligned
 		if(len %4 != 0) 
 			len = len + (4 - len % 4);
 
-		the_string = kmalloc(sizeof(char) * len); //or sizeof(len)?
-		the_string = kstrdup(args[i]);			
+		the_string = kmalloc(sizeof(char) * len);
+		the_string = kstrdup(args[index]);			
 
 		/* We have to do this for loop only if somehow the null byte is lost or
 		kstrdup doesn't work the way it's intended. */
@@ -155,7 +153,7 @@ runprogram(char *progname, char** args)
 	}
 
 	/* args[index] points to NULL, so allocate space on stack */
-	if (args[i] == NULL)
+	if (args[index] == NULL)
 		stackptr -= 4 * sizeof(char);
 
 	/* Now allocate and copyout the pointers to the strings in the stack */
