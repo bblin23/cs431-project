@@ -3,9 +3,119 @@
 #include <synchprobs.h>
 #include <synch.h>
 
+#include "opt-A1.h"
+
+#if OPT_A1
+
+static struct lock **globalCatMouseLock;
+static struct lock *lock;
+static struct cv *catEating;
+static struct cv *mouseEating;
+static int numCatsEating;
+static int numMiceEating;
+
+
+void
+catmouse_sync_init(int bowls)
+{
+  numCatsEating = 0;
+  numMiceEating = 0;
+  catEating = cv_create("catEating");
+  mouseEating = cv_create("mouseEating");
+
+  lock = lock_create("lock");
+
+  globalCatMouseLock = kmalloc(bowls * sizeof(struct lock *));
+  for(int i = 0; i < bowls; ++i) {
+    globalCatMouseLock[i] = lock_create("globalCatMouseLock");
+  }
+  if (globalCatMouseLock == NULL) {
+    panic("could not create CatMouse synchronization lock");
+  }
+  return;
+}
+
+void
+catmouse_sync_cleanup(int bowls)
+{
+  KASSERT(globalCatMouseLock != NULL);
+
+  for(int i = 0; i < bowls; ++i) {
+    lock_destroy(globalCatMouseLock[i]);
+  }
+  for(int i = 0; i < bowls; ++i) {
+    kfree(globalCatMouseLock[i]);
+  }
+  kfree(globalCatMouseLock);
+
+  lock_destroy(lock);
+  cv_destroy(catEating);
+  cv_destroy(mouseEating);
+}
+
+void
+cat_before_eating(unsigned int bowl)
+{
+  KASSERT(globalCatMouseLock != NULL);
+  lock_acquire(globalCatMouseLock[bowl-1]);
+  lock_acquire(lock);
+  while(numMiceEating > 0) {
+    lock_release(lock);
+    cv_wait(mouseEating, globalCatMouseLock[bowl-1]);
+    lock_acquire(lock);
+  }
+  ++numCatsEating;
+  lock_release(lock);
+}
+
+void
+cat_after_eating(unsigned int bowl)
+{
+  KASSERT(globalCatMouseLock != NULL);
+
+  lock_acquire(lock);
+  --numCatsEating;
+  if(numCatsEating == 0) {
+    cv_broadcast(catEating, globalCatMouseLock[bowl-1]);
+  }
+  lock_release(globalCatMouseLock[bowl-1]);
+  lock_release(lock);
+}
+
+void
+mouse_before_eating(unsigned int bowl)
+{
+  KASSERT(globalCatMouseLock != NULL);
+
+  lock_acquire(globalCatMouseLock[bowl-1]);
+  lock_acquire(lock);
+  while(numCatsEating > 0) {
+    lock_release(lock);
+    cv_wait(catEating, globalCatMouseLock[bowl-1]);
+    lock_acquire(lock);
+  }
+  ++numMiceEating;
+  lock_release(lock);
+}
+
+void
+mouse_after_eating(unsigned int bowl)
+{
+  KASSERT(globalCatMouseLock != NULL);
+
+  lock_acquire(lock);
+  --numMiceEating;
+  if(numMiceEating == 0) {
+    cv_broadcast(mouseEating, globalCatMouseLock[bowl-1]);
+  }
+  lock_release(globalCatMouseLock[bowl-1]);
+  lock_release(lock);
+}
+
+#else
 /* 
  * This simple default synchronization mechanism allows only creature at a time to
- * eat.   The globalCatMouseSem is used as a a lock.   We use a semaphore
+ * eat.   The globalCatMouseLock is used as a a lock.   We use a semaphore
  * rather than a lock so that this code will work even before locks are implemented.
  */
 
@@ -146,3 +256,5 @@ mouse_after_eating(unsigned int bowl)
   KASSERT(globalCatMouseSem != NULL);
   V(globalCatMouseSem);
 }
+
+#endif
