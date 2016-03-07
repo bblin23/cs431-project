@@ -11,6 +11,7 @@
 
 #include <fdtable.h>
 #include <synch.h>
+#include <copyinout.h>
 
 #include "opt-A2.h"
 /* handler for write() system call                  */
@@ -32,8 +33,16 @@ sys_write(int fdesc,userptr_t ubuf,unsigned int nbytes,int *retval)
   struct uio u;
   int res;
 
-  DEBUG(DB_SYSCALL,"Syscall: write(%d,%x,%d)\n",fdesc,(unsigned int)ubuf,nbytes);
-  
+  if(fdesc < 0 || fdesc > OPEN_MAX) {
+    return EBADF;
+  }
+  if(curthread->fdtable[fdesc] == NULL) {
+    return EBADF;
+  }
+  if(ubuf == NULL || curthread->fdtable[fdesc]->vnode == NULL) {
+    return EFAULT;
+  }
+
   lock_acquire(curthread->fdtable[fdesc]->lk);
 
   /* set up a uio structure to refer to the user program's buffer (ubuf) */
@@ -57,6 +66,43 @@ sys_write(int fdesc,userptr_t ubuf,unsigned int nbytes,int *retval)
   *retval = nbytes - u.uio_resid;
   lock_release(curthread->fdtable[fdesc]->lk);
   KASSERT(*retval >= 0);
+  return 0;
+}
+
+int
+sys_open(userptr_t filename, int flags, int mode, int *retval)
+{
+  int result;
+  int fd;
+
+  struct vnode *vnode;
+  char *name = kmalloc(sizeof(char) * PATH_MAX);
+  copyinstr(filename, name, PATH_MAX, NULL);
+  
+  for(fd = 3; fd < OPEN_MAX; ++fd) {
+    if(curthread->fdtable[fd] == NULL) {
+        break;
+    }
+  }
+  if(fd == OPEN_MAX) {
+    return ENFILE;
+  }
+
+  fd_init(fd);
+  
+  result = vfs_open(name, flags, mode, &vnode);
+  if(result) {
+    return result;
+  }
+
+  curthread->fdtable[fd]->vnode = vnode;
+  curthread->fdtable[fd]->flags = flags;
+  curthread->fdtable[fd]->offset = 0;
+  curthread->fdtable[fd]->lk = lock_create(name);
+  *retval = fd;
+  kfree(name);
+
+  kprintf("%d\n", *retval);
   return 0;
 }
 

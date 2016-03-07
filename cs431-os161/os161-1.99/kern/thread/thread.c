@@ -34,9 +34,7 @@
 #define THREADINLINE
 
 #include <types.h>
-#if OPT_A2
 #include <fdtable.h>
-#endif
 #include <kern/errno.h>
 #include <limits.h>
 #include <lib.h>
@@ -824,6 +822,54 @@ thread_startup(void (*entrypoint)(void *data1, unsigned long data2),
 	thread_exit();
 }
 
+#if OPT_A2
+
+/*
+ * Cause the current thread to exit.
+ *
+ * The parts of the thread structure we don't actually need to run
+ * should be cleaned up right away. The rest has to wait until
+ * thread_destroy is called from exorcise().
+ *
+ * Does not return.
+ */
+void
+thread_exit(void)
+{
+	struct thread *cur;
+
+	cur = curthread;
+
+#ifdef UW
+	/* threads for user processes should have detached from their process
+	   in sys__exit */
+	KASSERT(curproc == kproc || curproc == NULL);	
+	/* kernel threads don't go through sys__exit, so we detach them from kproc here */
+	if (curproc == kproc) {
+	  proc_remthread(cur);
+	}
+#else // UW
+	proc_remthread(cur);
+#endif // UW
+
+	/* Make sure we *are* detached (move this only if you're sure!) */
+	KASSERT(cur->t_proc == NULL);
+
+    if(cur->fdtable != NULL) {
+        fdtable_destroy(cur->fdtable);
+    }
+
+	/* Check the stack guard band. */
+	thread_checkstack(cur);
+
+	/* Interrupts off on this processor */
+        splhigh();
+	thread_switch(S_ZOMBIE, NULL);
+	panic("The zombie walks!\n");
+}
+
+#else
+
 /*
  * Cause the current thread to exit.
  *
@@ -863,6 +909,8 @@ thread_exit(void)
 	thread_switch(S_ZOMBIE, NULL);
 	panic("The zombie walks!\n");
 }
+
+#endif
 
 /*
  * Yield the cpu to another process, but stay runnable.
