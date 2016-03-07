@@ -3,7 +3,6 @@
 #include <limits.h>
 #include <kern/stat.h>
 #include <kern/unistd.h>
-#include <file.h>
 #include <syscall.h>
 
 #include <current.h>
@@ -12,12 +11,13 @@
 #include <kern/fcntl.h>
 #include <copyinout.h>
 
+#include <fdtable.h>
 #include "thread.h"
 #include <vnode.h>
+
 #include <synch.h>
 
-
-void fdtable_init() 
+int fdtable_init(void) 
 {
     int result;
     char path[5];
@@ -45,6 +45,8 @@ void fdtable_init()
     curthread->fdtable[0]->flags = O_RDONLY;
     curthread->fdtable[1]->flags = O_WRONLY;
     curthread->fdtable[2]->flags = O_WRONLY;
+
+    return 0;
 }
 
 
@@ -68,7 +70,7 @@ int fdtable_copy(struct fdtable *a[], struct fdtable *b[])
 }
 
 
-void fdtable_destroy(struct filetable *fdtable[])
+void fdtable_destroy(struct fdtable *fdtable[])
 {
     int i;
     for(i = 0; i < OPEN_MAX; ++i) {

@@ -9,6 +9,9 @@
 #include <current.h>
 #include <proc.h>
 
+#include <fdtable.h>
+#include <synch.h>
+
 #include "opt-A2.h"
 /* handler for write() system call                  */
 /*
