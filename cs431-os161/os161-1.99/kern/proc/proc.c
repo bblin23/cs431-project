@@ -113,16 +113,36 @@ proc_create(const char *name)
 #endif // UW
 
 #if OPT_A2
+
+	proc->p_info = NULL;
+
 	if(kproc != NULL)
 		proc->p_info = insert_ptable(proc);
-	else
-		proc->p_info = NULL;
 #endif
 
 	return proc;
 }
 
 #if OPT_A2
+
+void
+express_interest(pid_t pid){
+	ptable->plist[pid % NPROCS_MAX]->ninterested++;
+}
+
+void
+uninterested(pid_t pid){
+	ptable->plist[pid % NPROCS_MAX]->ninterested--;
+}
+
+bool
+check_interest(pid_t pid){
+	KASSERT (ptable->plist[pid % NPROCS_MAX]->ninterested > -1);
+	if(ptable->plist[pid % NPROCS_MAX]->ninterested > 0)
+		return true;
+	else
+		return false;
+}
 
 struct pinfo*
 gen_pinfo(pid_t pid, pid_t ppid, struct proc *new_proc){
@@ -138,11 +158,20 @@ gen_pinfo(pid_t pid, pid_t ppid, struct proc *new_proc){
 	ret->waitcv = cv_create("pinfo_waitcv");
 	if (ret->waitcv == NULL){
 		kfree(ret);
+		panic("Unable to make pinfo_waitcv");
+		return NULL;
+	}
+
+	ret->pinfolock = lock_create("pinfo_lock");
+	if (ret->pinfolock == NULL){
+		kfree(ret);
+		panic("Unable to make pinfo_lock");
 		return NULL;
 	}
 
 	ret->exited = false;
 	ret->exitcode = 0xBAAD;
+	ret->ninterested = 0;
 	return ret;
 }
 
@@ -170,7 +199,13 @@ insert_ptable(struct proc *new_proc)
 		}
 	}
 
-	struct pinfo *new_pinfo = gen_pinfo(ptable->nextpid, INV_PROC, new_proc);
+	struct pinfo *new_pinfo;
+	if(new_proc->p_info != NULL){ // IF WE ARE DOING FORK
+		new_pinfo = gen_pinfo(ptable->nextpid, new_proc->p_info->pid, new_proc);
+	}else{ //THIS IS AN ENTIRELY NEW PROCESS
+		new_pinfo = gen_pinfo(ptable->nextpid, INV_PROC, new_proc);
+	}
+
 	DEBUG(DB_PTABLE,"new_pinfo->pid = %d\n",new_pinfo->pid);
 	ptable->plist[ptable->nextpid % NPROCS_MAX] = new_pinfo;
 
@@ -196,8 +231,7 @@ remove_ptable(struct pinfo* rem)
 	rem->proc = NULL;
 	rem->ppid = INV_PROC;
 	rem->pid = INV_PROC;
-	cv_destroy(rem->waitcv);
-	/* do nothing with exit codes */
+	/* do nothing with exit codes, cv, lock, and ninterested will be dealloced in wait */
 	DEBUG(DB_PTABLE,"plist[%d]'s pinfo is REMOVED.\n",(pidrem%NPROCS_MAX));
 	lock_release(ptable->pt_lock);
 

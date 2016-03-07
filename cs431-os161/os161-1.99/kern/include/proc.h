@@ -106,14 +106,19 @@ struct pinfo {
 	pid_t ppid;
 	pid_t pid;
 	struct cv *waitcv;
+	struct lock *pinfolock;
 	bool exited;
 	int exitcode;
+	volatile int ninterested;
 };
 
 /* Global process table for holding all processes */
 extern struct ptable *ptable;
 
 /* Managing ptable */
+void express_interest(pid_t pid);
+void uninterested(pid_t pid);
+bool check_interest(pid_t pid);
 struct pinfo *gen_pinfo(pid_t pid, pid_t ppid, struct proc *new_proc);
 struct pinfo *insert_ptable(struct proc *);
 int remove_ptable(struct pinfo* rem);
