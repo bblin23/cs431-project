@@ -75,11 +75,7 @@ struct proc {
 
 #if OPT_A2
 
-	pid_t ppid;                    	//parent process id
-	pid_t pid;						//own process id
-	struct cv *waitcv;				
-	bool exited;
-	int exitcode;					//for waitpid()
+	struct pinfo* p_info;
 
 #endif     
 
@@ -101,15 +97,27 @@ extern struct semaphore *no_proc_sem;
 struct ptable {
 	struct lock *pt_lock;
 	pid_t nextpid;
-	struct proc *plist[NPROCS_MAX];
+	struct pinfo *plist[NPROCS_MAX];
+};
+
+/* This struct will hold all the pid info that is put in the ptable */
+struct pinfo {
+	struct proc *proc;
+	pid_t ppid;
+	pid_t pid;
+	struct cv *waitcv;
+	bool exited;
+	int exitcode;
 };
 
 /* Global process table for holding all processes */
 extern struct ptable *ptable;
 
 /* Managing ptable */
-pid_t insert_ptable(struct proc *);
-int remove_ptable(pid_t pid);
+struct pinfo *gen_pinfo(pid_t pid, pid_t ppid, struct proc *new_proc);
+struct pinfo *insert_ptable(struct proc *);
+int remove_ptable(struct pinfo* rem);
+
 #endif
 
 /* Call once during system startup to allocate data structures. */

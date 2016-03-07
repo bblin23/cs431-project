@@ -113,26 +113,10 @@ proc_create(const char *name)
 #endif // UW
 
 #if OPT_A2
-
-	proc->ppid = INV_PROC;
-	/* no pid for kernel */
-	if (kproc != NULL){
-		int result = insert_ptable(proc);
-		if(result)
-			DEBUG(DB_PTABLE,"Unable to insert into ptable.");
-	} else
-		proc->pid = INIT_PROC;
-
-	proc->waitcv = cv_create("p_waitcv");
-	if (proc->waitcv == NULL){
-		kfree(proc);
-		return NULL;
-	}
-
-	proc->exited = false;
-	proc->exitcode = 0xBAAD;
-
-
+	if(kproc != NULL)
+		proc->p_info = insert_ptable(proc);
+	else
+		proc->p_info = NULL;
 #endif
 
 	return proc;
@@ -140,7 +124,29 @@ proc_create(const char *name)
 
 #if OPT_A2
 
-pid_t 
+struct pinfo*
+gen_pinfo(pid_t pid, pid_t ppid, struct proc *new_proc){
+
+	struct pinfo *ret = kmalloc(sizeof(struct pinfo));
+	
+	/* ret->proc is going to be done by insert_ptable */
+	ret->proc = new_proc;
+
+	ret->pid = pid;
+	ret->ppid = ppid;
+
+	ret->waitcv = cv_create("pinfo_waitcv");
+	if (ret->waitcv == NULL){
+		kfree(ret);
+		return NULL;
+	}
+
+	ret->exited = false;
+	ret->exitcode = 0xBAAD;
+	return ret;
+}
+
+struct pinfo*
 insert_ptable(struct proc *new_proc)
 {
 
@@ -152,34 +158,47 @@ insert_ptable(struct proc *new_proc)
 
 	if(proc_count == NPROCS_MAX){
 		lock_release(ptable->pt_lock);
-		return -1;			//ptable is full ERROR
+		panic("ptable is FULL!");
 	}
 
-
-	while(ptable->plist[ptable->nextpid % NPROCS_MAX] != NULL){
-		ptable->nextpid++;
+	/* iterate through pinfos with actual processes */
+	if(ptable->plist[ptable->nextpid%NPROCS_MAX] != NULL){
+		DEBUG(DB_PTABLE,"pinfo %d is still there!\n", ptable->nextpid);
+		while(ptable->plist[ptable->nextpid % NPROCS_MAX]->proc != NULL){
+			DEBUG(DB_PTABLE,"Iterating through pids... %d\n",ptable->nextpid);
+			ptable->nextpid++;
+		}
 	}
 
-	new_proc->pid = ptable->nextpid;
-	DEBUG(DB_PTABLE,"newproc->pid = %d\n",new_proc->pid);
-	ptable->plist[ptable->nextpid % NPROCS_MAX] = new_proc;
+	struct pinfo *new_pinfo = gen_pinfo(ptable->nextpid, INV_PROC, new_proc);
+	DEBUG(DB_PTABLE,"new_pinfo->pid = %d\n",new_pinfo->pid);
+	ptable->plist[ptable->nextpid % NPROCS_MAX] = new_pinfo;
+
+
 	ptable->nextpid++;
 	lock_release(ptable->pt_lock);
 
-	return 0;
+	return new_pinfo;
 
 }
 
+/* Remove the process link, keep pinfo.*/
 int 
-remove_ptable(pid_t pid)
+remove_ptable(struct pinfo* rem)
 {
 
-	DEBUG(DB_PTABLE,"pid: %d\n",pid);
-	KASSERT(pid >= PID_MIN && pid <= PID_MAX);
-	KASSERT(ptable->plist[pid % NPROCS_MAX] != NULL);
+	pid_t pidrem = rem->pid;
+	DEBUG(DB_PTABLE,"pid to be removed: %d\n",pidrem);
+	KASSERT(rem->pid >= PID_MIN && rem->pid <= PID_MAX);
+	KASSERT(ptable->plist[rem->pid % NPROCS_MAX] != NULL);
 
 	lock_acquire(ptable->pt_lock);
-	ptable->plist[pid % NPROCS_MAX] = NULL;
+	rem->proc = NULL;
+	rem->ppid = INV_PROC;
+	rem->pid = INV_PROC;
+	cv_destroy(rem->waitcv);
+	/* do nothing with exit codes */
+	DEBUG(DB_PTABLE,"plist[%d]'s pinfo is REMOVED.\n",(pidrem%NPROCS_MAX));
 	lock_release(ptable->pt_lock);
 
 	return 0;
@@ -250,9 +269,12 @@ proc_destroy(struct proc *proc)
 	spinlock_cleanup(&proc->p_lock);
 
 #if OPT_A2
-	int result = remove_ptable(proc->pid);
-	if(result){
-		DEBUG(DB_PTABLE,"Couldn't remove ptable entry.");
+
+	if(proc->p_info != NULL){		//it's in the ptable
+		int result = remove_ptable(proc->p_info);
+		if(result){
+			DEBUG(DB_PTABLE,"Couldn't remove ptable entry.");
+		}
 	}
 #endif
 
@@ -307,9 +329,10 @@ proc_bootstrap(void)
   if(ptable->pt_lock == NULL) {
   	lock_destroy(ptable->pt_lock);
   	kfree(ptable);
-  	DEBUG(DB_PTABLE,"Unable to make pt_lock");
+ 	panic("Unable to make pt_lock");
   }
   ptable->nextpid = PID_MIN;
+
 #endif
 }
 
