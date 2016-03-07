@@ -34,7 +34,11 @@
 #define THREADINLINE
 
 #include <types.h>
+#if OPT_A2
+#include <fdtable.h>
+#endif
 #include <kern/errno.h>
+#include <limits.h>
 #include <lib.h>
 #include <array.h>
 #include <cpu.h>
@@ -52,6 +56,7 @@
 #include <vnode.h>
 
 #include "opt-synchprobs.h"
+#include "opt-A2.h"
 
 
 /* Magic number used as a guard value on kernel thread stacks. */
@@ -111,6 +116,55 @@ thread_checkstack(struct thread *thread)
 	}
 }
 
+#if OPT_A2
+
+/*
+ * Create a thread. This is used both to create a first thread
+ * for each CPU and to create subsequent forked threads.
+ */
+static
+struct thread *
+thread_create(const char *name)
+{
+	struct thread *thread;
+
+	DEBUGASSERT(name != NULL);
+
+	thread = kmalloc(sizeof(*thread));
+	if (thread == NULL) {
+		return NULL;
+	}
+
+	thread->t_name = kstrdup(name);
+	if (thread->t_name == NULL) {
+		kfree(thread);
+		return NULL;
+	}
+	thread->t_wchan_name = "NEW";
+	thread->t_state = S_READY;
+
+	/* Thread subsystem fields */
+	thread_machdep_init(&thread->t_machdep);
+	threadlistnode_init(&thread->t_listnode, thread);
+	thread->t_stack = NULL;
+	thread->t_context = NULL;
+	thread->t_cpu = NULL;
+	thread->t_proc = NULL;
+
+	/* Interrupt state fields */
+	thread->t_in_interrupt = false;
+	thread->t_curspl = IPL_HIGH;
+	thread->t_iplhigh_count = 1; /* corresponding to t_curspl */
+
+    for(int i = 0; i < OPEN_MAX; ++i) {
+        thread->fdtable[i] = NULL;
+    }
+
+	return thread;
+}
+
+#else
+
 /*
  * Create a thread. This is used both to create a first thread
  * for each CPU and to create subsequent forked threads.
@@ -153,6 +207,8 @@ thread_create(const char *name)
 
 	return thread;
 }
+
+#endif
 
 /*
  * Create a CPU structure. This is used for the bootup CPU and

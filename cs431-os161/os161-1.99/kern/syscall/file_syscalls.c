@@ -9,6 +9,7 @@
 #include <current.h>
 #include <proc.h>
 
+#include "opt-A2.h"
 /* handler for write() system call                  */
 /*
  * n.b.
@@ -19,6 +20,44 @@
  *
  * You will need to improve this implementation
  */
+
+#if OPT_A2
+int
+sys_write(int fdesc,userptr_t ubuf,unsigned int nbytes,int *retval)
+{
+  struct iovec iov;
+  struct uio u;
+  int res;
+
+  DEBUG(DB_SYSCALL,"Syscall: write(%d,%x,%d)\n",fdesc,(unsigned int)ubuf,nbytes);
+  
+  lock_acquire(curthread->fdtable[fdesc]->lk);
+
+  /* set up a uio structure to refer to the user program's buffer (ubuf) */
+  iov.iov_ubase = ubuf;
+  iov.iov_len = nbytes;
+  u.uio_iov = &iov;
+  u.uio_iovcnt = 1;
+  u.uio_offset = 0;  /* not needed for the console */
+  u.uio_resid = nbytes;
+  u.uio_segflg = UIO_USERSPACE;
+  u.uio_rw = UIO_WRITE;
+  u.uio_space = curproc->p_addrspace;
+
+  res = VOP_WRITE(curthread->fdtable[fdesc]->vnode, &u);
+  if (res) {
+    lock_release(curthread->fdtable[fdesc]->lk);
+    return res;
+  }
+
+  /* pass back the number of bytes actually written */
+  *retval = nbytes - u.uio_resid;
+  lock_release(curthread->fdtable[fdesc]->lk);
+  KASSERT(*retval >= 0);
+  return 0;
+}
+
+#else
 
 int
 sys_write(int fdesc,userptr_t ubuf,unsigned int nbytes,int *retval)
@@ -58,3 +97,5 @@ sys_write(int fdesc,userptr_t ubuf,unsigned int nbytes,int *retval)
   KASSERT(*retval >= 0);
   return 0;
 }
+
+#endif

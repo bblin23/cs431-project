@@ -33,6 +33,10 @@
  * that execv() needs to do more than this function does.
  */
 
+#if OPT_A2
+#include <fdtable.h>
+#endif
+
 #include <types.h>
 #include <kern/errno.h>
 #include <kern/fcntl.h>
@@ -86,6 +90,10 @@ runprogram(char *progname, char** args)
 		vfs_close(v);
 		return ENOMEM;
 	}
+
+#if OPT_A2
+    fdtable_init();
+#endif
 
 	/* Switch to it and activate it. */
 	curproc_setas(as);

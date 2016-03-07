@@ -37,6 +37,10 @@
  */
 
 #include <array.h>
+#if OPT_A2
+#include <fdtable.h>
+#endif
+#include <limits.h>
 #include <spinlock.h>
 #include <threadlist.h>
 
@@ -55,6 +59,7 @@ struct cpu;
 /* Macro to test if two addresses are on the same kernel stack */
 #define SAME_STACK(p1, p2)     (((p1) & STACK_MASK) == ((p2) & STACK_MASK))
 
+#include "opt-A2.h"
 
 /* States a thread can be in. */
 typedef enum {
@@ -63,6 +68,54 @@ typedef enum {
 	S_SLEEP,	/* sleeping */
 	S_ZOMBIE,	/* zombie; exited but not yet deleted */
 } threadstate_t;
+
+#if OPT_A2
+
+/* Thread structure. */
+struct thread {
+	/*
+	 * These go up front so they're easy to get to even if the
+	 * debugger is messed up.
+	 */
+	char *t_name;			/* Name of this thread */
+	const char *t_wchan_name;	/* Name of wait channel, if sleeping */
+	threadstate_t t_state;		/* State this thread is in */
+
+	/*
+	 * Thread subsystem internal fields.
+	 */
+	struct thread_machdep t_machdep; /* Any machine-dependent goo */
+	struct threadlistnode t_listnode; /* Link for run/sleep/zombie lists */
+	void *t_stack;			/* Kernel-level stack */
+	struct switchframe *t_context;	/* Saved register context (on stack) */
+	struct cpu *t_cpu;		/* CPU thread runs on */
+	struct proc *t_proc;		/* Process thread belongs to */
+
+	/*
+	 * Interrupt state fields.
+	 *
+	 * t_in_interrupt is true if current execution is in an
+	 * interrupt handler, which means the thread's normal context
+	 * of execution is stopped somewhere in the middle of doing
+	 * something else. This makes assorted operations unsafe.
+	 *
+	 * See notes in spinlock.c regarding t_curspl and t_iplhigh_count.
+	 *
+	 * Exercise for the student: why is this material per-thread
+	 * rather than per-cpu or global?
+	 */
+	bool t_in_interrupt;		/* Are we in an interrupt? */
+	int t_curspl;			/* Current spl*() state */
+	int t_iplhigh_count;		/* # of times IPL has been raised */
+
+	/*
+	 * Public fields
+	 */
+
+    struct fdtable *fdtable[OPEN_MAX];
+};
+
+#else
 
 /* Thread structure. */
 struct thread {
@@ -107,6 +160,8 @@ struct thread {
 
 	/* add more here as needed */
 };
+
+#endif
 
 /*
  * Array of threads.
