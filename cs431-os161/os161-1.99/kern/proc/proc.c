@@ -51,10 +51,19 @@
 #include <synch.h>
 #include <kern/fcntl.h>  
 
+#include "opt-A2.h"
+#include <limits.h>
+
 /*
  * The process for the kernel; this holds all the kernel-only threads.
  */
 struct proc *kproc;
+
+#if OPT_A2
+
+struct ptable *ptable;
+
+#endif
 
 /*
  * Mechanism for making the kernel menu thread sleep while processes are running
@@ -103,8 +112,82 @@ proc_create(const char *name)
 	proc->console = NULL;
 #endif // UW
 
+#if OPT_A2
+
+	proc->ppid = INV_PROC;
+	/* no pid for kernel */
+	if (kproc != NULL){
+		int result = insert_ptable(proc);
+		if(result)
+			DEBUG(DB_PTABLE,"Unable to insert into ptable.");
+	} else
+		proc->pid = INIT_PROC;
+
+	proc->waitcv = cv_create("p_waitcv");
+	if (proc->waitcv == NULL){
+		kfree(proc);
+		return NULL;
+	}
+
+	proc->exited = false;
+	proc->exitcode = 0xBAAD;
+
+
+#endif
+
 	return proc;
 }
+
+#if OPT_A2
+
+pid_t 
+insert_ptable(struct proc *new_proc)
+{
+
+	KASSERT(new_proc != kproc);
+
+	DEBUG(DB_PTABLE,"Inserting into ptable...\n");
+	
+	lock_acquire(ptable->pt_lock);
+
+	if(proc_count == NPROCS_MAX){
+		lock_release(ptable->pt_lock);
+		return -1;			//ptable is full ERROR
+	}
+
+
+	while(ptable->plist[ptable->nextpid % NPROCS_MAX] != NULL){
+		ptable->nextpid++;
+	}
+
+	new_proc->pid = ptable->nextpid;
+	DEBUG(DB_PTABLE,"newproc->pid = %d\n",new_proc->pid);
+	ptable->plist[ptable->nextpid % NPROCS_MAX] = new_proc;
+	ptable->nextpid++;
+	lock_release(ptable->pt_lock);
+
+	return 0;
+
+}
+
+int 
+remove_ptable(pid_t pid)
+{
+
+	DEBUG(DB_PTABLE,"pid: %d\n",pid);
+	KASSERT(pid >= PID_MIN && pid <= PID_MAX);
+	KASSERT(ptable->plist[pid % NPROCS_MAX] != NULL);
+
+	lock_acquire(ptable->pt_lock);
+	ptable->plist[pid % NPROCS_MAX] = NULL;
+	lock_release(ptable->pt_lock);
+
+	return 0;
+}
+
+
+
+#endif
 
 /*
  * Destroy a proc structure.
@@ -166,6 +249,13 @@ proc_destroy(struct proc *proc)
 	threadarray_cleanup(&proc->p_threads);
 	spinlock_cleanup(&proc->p_lock);
 
+#if OPT_A2
+	int result = remove_ptable(proc->pid);
+	if(result){
+		DEBUG(DB_PTABLE,"Couldn't remove ptable entry.");
+	}
+#endif
+
 	kfree(proc->p_name);
 	kfree(proc);
 
@@ -208,6 +298,19 @@ proc_bootstrap(void)
     panic("could not create no_proc_sem semaphore\n");
   }
 #endif // UW 
+
+#if OPT_A2
+  ptable = kmalloc(sizeof(*ptable));
+  /* Not sure if I need to initialize plist or not. is it ok to just have the max in the header? */
+  //ptable->plist = kmalloc(sizeof(NPROCS_MAX * sizeof(struct proc*)));
+  ptable->pt_lock = lock_create("pt_lock");
+  if(ptable->pt_lock == NULL) {
+  	lock_destroy(ptable->pt_lock);
+  	kfree(ptable);
+  	DEBUG(DB_PTABLE,"Unable to make pt_lock");
+  }
+  ptable->nextpid = PID_MIN;
+#endif
 }
 
 /*

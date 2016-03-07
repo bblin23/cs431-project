@@ -39,6 +39,9 @@
 #include <spinlock.h>
 #include <thread.h> /* required for struct threadarray */
 
+#include "opt-A2.h"
+#include <limits.h>
+
 struct addrspace;
 struct vnode;
 #ifdef UW
@@ -69,6 +72,17 @@ struct proc {
 #endif
 
 	/* add more material here as needed */
+
+#if OPT_A2
+
+	pid_t ppid;                    	//parent process id
+	pid_t pid;						//own process id
+	struct cv *waitcv;				
+	bool exited;
+	int exitcode;					//for waitpid()
+
+#endif     
+
 };
 
 /* This is the process structure for the kernel and for kernel-only threads. */
@@ -78,6 +92,25 @@ extern struct proc *kproc;
 #ifdef UW
 extern struct semaphore *no_proc_sem;
 #endif // UW
+
+#if OPT_A2
+
+#define INV_PROC		0
+#define INIT_PROC		1
+
+struct ptable {
+	struct lock *pt_lock;
+	pid_t nextpid;
+	struct proc *plist[NPROCS_MAX];
+};
+
+/* Global process table for holding all processes */
+extern struct ptable *ptable;
+
+/* Managing ptable */
+pid_t insert_ptable(struct proc *);
+int remove_ptable(pid_t pid);
+#endif
 
 /* Call once during system startup to allocate data structures. */
 void proc_bootstrap(void);

@@ -45,6 +45,7 @@
 #include "opt-synchprobs.h"
 #include "opt-sfs.h"
 #include "opt-net.h"
+#include "opt-A1.h"
 #include "opt-A2.h"
 
 /*
@@ -445,7 +446,12 @@ static const char *opsmenu[] = {
 	"[sync]    Sync filesystems          ",
 	"[panic]   Intentional panic         ",
 	"[q]       Quit and shut down        ",
-	"[dth]	   Enable thread debugging  ",
+#if OPT_A1
+	"[dth]	   Enable thread debugging   ",
+#endif
+#if OPT_A2
+	"[dpt]	   Enable ptable debugging   ",
+#endif
 	NULL
 };
 
@@ -528,6 +534,7 @@ cmd_mainmenu(int n, char **a)
 	return 0;
 }
 
+#if OPT_A1
 static
 int
 cmd_dth(int n, char **a){
@@ -538,7 +545,20 @@ cmd_dth(int n, char **a){
 
 	return 0;
 }
+#endif
 
+#if OPT_A2
+static
+int
+cmd_dpt(int n, char **a){
+
+	(void)n;
+	(void)a;
+	dbflags = (dbflags | DB_PTABLE);
+
+	return 0;
+}
+#endif
 
 
 ////////////////////////////////////////
@@ -570,7 +590,13 @@ static struct {
 	{ "q",		cmd_quit },
 	{ "exit",	cmd_quit },
 	{ "halt",	cmd_quit },
+#if OPT_A1
 	{ "dth", 	cmd_dth },
+#endif
+
+#if OPT_A2
+	{ "dpt", 	cmd_dpt },
+#endif
 
 #if OPT_SYNCHPROBS
 	/* in-kernel synchronization problem(s) */

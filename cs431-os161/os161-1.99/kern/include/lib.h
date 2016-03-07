@@ -58,6 +58,7 @@
  * temporarily instead.
  */
 #include "opt-noasserts.h"
+#include "opt-A2.h"
 
 #if OPT_NOASSERTS
 #define KASSERT(expr) ((void)(expr))
@@ -89,6 +90,10 @@
 #define DB_NETFS       0x0400
 #define DB_KMALLOC     0x0800
 #define DB_SYNCPROB    0x1000
+
+#if OPT_A2
+#define DB_PTABLE	   0x0300
+#endif
 
 extern uint32_t dbflags;
 
