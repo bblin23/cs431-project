@@ -69,42 +69,77 @@ sys_write(int fdesc,userptr_t ubuf,unsigned int nbytes,int *retval)
   return 0;
 }
 
+/*
+int
+sys_read(int fdesc, userptr_t ubuf, unsigned int nbytes, int *retval)
+{
+
+}
+*/
+
 int
 sys_open(userptr_t filename, int flags, int mode, int *retval)
 {
   int result;
-  int fd;
+  int fdesc;
 
-  struct vnode *vnode;
+  struct vnode *vn;
   char *name = kmalloc(sizeof(char) * PATH_MAX);
   copyinstr(filename, name, PATH_MAX, NULL);
   
-  for(fd = 3; fd < OPEN_MAX; ++fd) {
-    if(curthread->fdtable[fd] == NULL) {
+  for(fdesc = 3; fdesc < OPEN_MAX; ++fdesc) {
+    if(curthread->fdtable[fdesc] == NULL) {
         break;
     }
   }
-  if(fd == OPEN_MAX) {
+  if(fdesc == OPEN_MAX) {
     return ENFILE;
   }
 
-  fd_init(fd);
+  fd_init(fdesc);
   
-  result = vfs_open(name, flags, mode, &vnode);
+  result = vfs_open(name, flags, mode, &vn);
   if(result) {
     return result;
   }
 
-  curthread->fdtable[fd]->vnode = vnode;
-  curthread->fdtable[fd]->flags = flags;
-  curthread->fdtable[fd]->offset = 0;
-  curthread->fdtable[fd]->lk = lock_create(name);
-  *retval = fd;
+  curthread->fdtable[fdesc]->vnode = vn;
+  curthread->fdtable[fdesc]->flags = flags;
+  curthread->fdtable[fdesc]->offset = 0;
+  curthread->fdtable[fdesc]->lk = lock_create(name);
+  *retval = fdesc;
   kfree(name);
 
-  kprintf("%d\n", *retval);
   return 0;
 }
+
+int
+sys_close(int fdesc)
+{
+  if(fdesc < 0 || fdesc >= OPEN_MAX) {
+    return EBADF;
+  }
+  if(curthread->fdtable[fdesc] == NULL) {
+    return EBADF;
+  }
+  lock_acquire(curthread->fdtable[fdesc]->lk);
+  if(*curthread->fdtable[fdesc]->dups > 0) {
+    --*curthread->fdtable[fdesc]->dups;
+    lock_release(curthread->fdtable[fdesc]->lk);
+    curthread->fdtable[fdesc] = NULL;
+  }
+  else if(*curthread->fdtable[fdesc]->dups == 0) {
+    vfs_close(curthread->fdtable[fdesc]->vnode);
+    lock_release(curthread->fdtable[fdesc]->lk);
+    lock_destroy(curthread->fdtable[fdesc]->lk);
+    kfree(curthread->fdtable[fdesc]->dups);
+    kfree(curthread->fdtable[fdesc]);
+    curthread->fdtable[fdesc] = NULL;
+  }
+
+  return 0;
+}
+
 
 #else
 
