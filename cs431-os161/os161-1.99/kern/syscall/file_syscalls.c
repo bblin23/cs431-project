@@ -14,16 +14,6 @@
 #include <copyinout.h>
 
 #include "opt-A2.h"
-/* handler for write() system call                  */
-/*
- * n.b.
- * This implementation handles only writes to standard output 
- * and standard error, both of which go to the console.
- * Also, it does not provide any synchronization, so writes
- * are not atomic.
- *
- * You will need to improve this implementation
- */
 
 #if OPT_A2
 int
@@ -69,13 +59,48 @@ sys_write(int fdesc,userptr_t ubuf,unsigned int nbytes,int *retval)
   return 0;
 }
 
-/*
 int
 sys_read(int fdesc, userptr_t ubuf, unsigned int nbytes, int *retval)
 {
+  struct iovec iov;
+  struct uio u;
+  int res;
 
+  if(fdesc < 0 || fdesc > OPEN_MAX) {
+    return EBADF;
+  }
+  if(curthread->fdtable[fdesc] == NULL) {
+    return EBADF;
+  }
+  if(ubuf == NULL || curthread->fdtable[fdesc]->vnode == NULL) {
+    return EFAULT;
+  }
+
+  lock_acquire(curthread->fdtable[fdesc]->lk);
+
+  /* set up a uio structure to refer to the user program's buffer (ubuf) */
+  iov.iov_ubase = ubuf;
+  iov.iov_len = nbytes;
+  u.uio_iov = &iov;
+  u.uio_iovcnt = 1;
+  u.uio_offset = 0;  /* not needed for the console */
+  u.uio_resid = nbytes;
+  u.uio_segflg = UIO_USERSPACE;
+  u.uio_rw = UIO_READ;
+  u.uio_space = curproc->p_addrspace;
+
+  res = VOP_READ(curthread->fdtable[fdesc]->vnode, &u);
+  if (res) {
+    lock_release(curthread->fdtable[fdesc]->lk);
+    return res;
+  }
+
+  /* pass back the number of bytes actually written */
+  *retval = nbytes - u.uio_resid;
+  lock_release(curthread->fdtable[fdesc]->lk);
+  KASSERT(*retval >= 0);
+  return 0;
 }
-*/
 
 int
 sys_open(userptr_t filename, int flags, int mode, int *retval)

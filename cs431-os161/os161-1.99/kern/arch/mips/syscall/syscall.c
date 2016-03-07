@@ -118,6 +118,12 @@ syscall(struct trapframe *tf)
 			  (int *)(&retval));
 	  break;
     #if OPT_A2
+    case SYS_read:
+	  err = sys_read((int)tf->tf_a0,
+			  (userptr_t)tf->tf_a1,
+			  (int)tf->tf_a2,
+			  (int *)(&retval));
+	  break;
     case SYS_open:
         err = sys_open((userptr_t)tf->tf_a0, (int)tf->tf_a1, (int)tf->tf_a2, (int *)(&retval));
     break;

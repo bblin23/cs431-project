@@ -63,6 +63,7 @@ int sys___time(userptr_t user_seconds, userptr_t user_nanoseconds);
 #ifdef UW
 int sys_write(int fdesc,userptr_t ubuf,unsigned int nbytes,int *retval);
 #if OPT_A2
+int sys_read(int fdesc, userptr_t ubuf, unsigned int nbytes, int*retval);
 int sys_open(userptr_t filename, int flags, int mode, int *retval);
 int sys_close(int fdesc);
 #endif
