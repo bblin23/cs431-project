@@ -90,7 +90,12 @@ runprogram(char *progname, char** args)
 	}
 
 #if OPT_A2
-    fdtable_init();
+    if(curthread->fdtable[0] == NULL) {
+        result = fdtable_init();
+        if (result) {
+            return result;
+        }
+    }
 #endif
 
 	/* Switch to it and activate it. */
