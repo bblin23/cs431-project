@@ -371,7 +371,8 @@ proc_syscalls.o: ../../syscall/proc_syscalls.c ../../include/types.h \
   includelinks/kern/machine/setjmp.h ../../include/proc.h \
   ../../include/limits.h ../../include/kern/limits.h opt-A2.h \
   ../../include/addrspace.h ../../include/vm.h includelinks/machine/vm.h \
-  ../../include/copyinout.h ../../include/synch.h opt-A1.h opt-A2.h
+  ../../include/copyinout.h ../../include/synch.h opt-A1.h opt-A2.h \
+  ../../include/spl.h includelinks/mips/trapframe.h
 runprogram.o: ../../syscall/runprogram.c ../../include/types.h \
   ../../include/kern/types.h includelinks/kern/machine/types.h \
   includelinks/machine/types.h ../../include/kern/errno.h \
@@ -389,7 +390,7 @@ runprogram.o: ../../syscall/runprogram.c ../../include/types.h \
 time_syscalls.o: ../../syscall/time_syscalls.c ../../include/types.h \
   ../../include/kern/types.h includelinks/kern/machine/types.h \
   includelinks/machine/types.h ../../include/clock.h opt-synchprobs.h \
-  ../../include/copyinout.h ../../include/syscall.h
+  ../../include/copyinout.h ../../include/syscall.h opt-A2.h
 arraytest.o: ../../test/arraytest.c ../../include/types.h \
   ../../include/kern/types.h includelinks/kern/machine/types.h \
   includelinks/machine/types.h ../../include/lib.h ../../include/cdefs.h \
@@ -603,7 +604,10 @@ syscall.o: ../../arch/mips/syscall/syscall.c ../../include/types.h \
   includelinks/machine/spinlock.h ../../include/threadlist.h \
   includelinks/machine/thread.h ../../include/setjmp.h \
   includelinks/kern/machine/setjmp.h ../../include/current.h \
-  includelinks/machine/current.h ../../include/syscall.h
+  includelinks/machine/current.h ../../include/syscall.h opt-A2.h \
+  ../../include/addrspace.h ../../include/vm.h includelinks/machine/vm.h \
+  ../../include/proc.h ../../include/limits.h ../../include/kern/limits.h \
+  opt-A2.h ../../include/synch.h opt-A1.h
 cpu.o: ../../arch/mips/thread/cpu.c ../../include/types.h \
   ../../include/kern/types.h includelinks/kern/machine/types.h \
   includelinks/machine/types.h ../../include/lib.h ../../include/cdefs.h \

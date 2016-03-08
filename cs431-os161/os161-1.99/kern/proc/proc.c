@@ -101,6 +101,8 @@ proc_create(const char *name)
 
 	threadarray_init(&proc->p_threads);
 	spinlock_init(&proc->p_lock);
+	proc->p_lock2 = lock_create("p_lock2");
+	proc->p_waitcv = cv_create("p_waitcv");
 
 	/* VM fields */
 	proc->p_addrspace = NULL;
@@ -145,13 +147,10 @@ check_interest(pid_t pid){
 }
 
 struct pinfo*
-gen_pinfo(pid_t pid, pid_t ppid, struct proc *new_proc){
+gen_pinfo(pid_t pid, pid_t ppid){
 
 	struct pinfo *ret = kmalloc(sizeof(struct pinfo));
 	
-	/* ret->proc is going to be done by insert_ptable */
-	ret->proc = new_proc;
-
 	ret->pid = pid;
 	ret->ppid = ppid;
 
@@ -175,11 +174,32 @@ gen_pinfo(pid_t pid, pid_t ppid, struct proc *new_proc){
 	return ret;
 }
 
+pid_t
+gen_pid(void)
+{
+	while (ptable->plist[ptable->nextpid % NPROCS_MAX] != NULL){
+		DEBUG(DB_PTABLE,"pinfo %d is still there!\n", ptable->nextpid);
+		if (ptable->plist[ptable->nextpid % NPROCS_MAX]->exited == true){
+			return ptable->nextpid;
+		}
+		ptable->nextpid++;
+	}
+	DEBUG(DB_PTABLE,"generatedpid = %d\n",ptable->nextpid);
+	return ptable->nextpid;
+}
+
+int
+getproc_count(void){
+	return proc_count;
+}
+
 struct pinfo*
 insert_ptable(struct proc *new_proc)
 {
 
 	KASSERT(new_proc != kproc);
+
+	bool fork = false;
 
 	DEBUG(DB_PTABLE,"Inserting into ptable...\n");
 	
@@ -191,29 +211,39 @@ insert_ptable(struct proc *new_proc)
 	}
 
 	/* iterate through pinfos with actual processes */
-	if(ptable->plist[ptable->nextpid%NPROCS_MAX] != NULL){
-		DEBUG(DB_PTABLE,"pinfo %d is still there!\n", ptable->nextpid);
-		while(ptable->plist[ptable->nextpid % NPROCS_MAX]->proc != NULL){
-			DEBUG(DB_PTABLE,"Iterating through pids... %d\n",ptable->nextpid);
-			ptable->nextpid++;
-		}
-	}
+	pid_t generatedpid = gen_pid();
 
 	struct pinfo *new_pinfo;
 	if(new_proc->p_info != NULL){ // IF WE ARE DOING FORK
-		new_pinfo = gen_pinfo(ptable->nextpid, new_proc->p_info->pid, new_proc);
+		fork = true;
+		new_proc->p_info = gen_pinfo(generatedpid, new_proc->p_info->pid);
+		ptable->plist[ptable->nextpid % NPROCS_MAX] = new_proc->p_info;
+		proc_count++;
+		DEBUG(DB_PTABLE,"forked pid = %d\n",new_proc->p_info->pid);
 	}else{ //THIS IS AN ENTIRELY NEW PROCESS
-		new_pinfo = gen_pinfo(ptable->nextpid, INV_PROC, new_proc);
+		new_pinfo = gen_pinfo(generatedpid, INV_PROC);
+		DEBUG(DB_PTABLE,"new_pinfo->pid = %d\n",new_pinfo->pid);
+		ptable->plist[ptable->nextpid % NPROCS_MAX] = new_pinfo;
 	}
 
-	DEBUG(DB_PTABLE,"new_pinfo->pid = %d\n",new_pinfo->pid);
-	ptable->plist[ptable->nextpid % NPROCS_MAX] = new_pinfo;
+	DEBUG(DB_PTABLE,"Insert done.\n");
+	DEBUG(DB_PTABLE,"PTABLE STATUS: \n");
+	for (int i = 0; i < NPROCS_MAX; i++){
+		if(ptable->plist[i] != NULL)
+			DEBUG(DB_PTABLE,"%d[%d] ",i, ptable->plist[i]->pid);
+		else
+			DEBUG(DB_PTABLE,"%d[ ] ",i);
 
+	}
+	DEBUG(DB_PTABLE,"\n");
 
 	ptable->nextpid++;
 	lock_release(ptable->pt_lock);
 
-	return new_pinfo;
+	if(fork)
+		return new_proc->p_info;
+	else
+		return new_pinfo;
 
 }
 
@@ -225,10 +255,9 @@ remove_ptable(struct pinfo* rem)
 	pid_t pidrem = rem->pid;
 	DEBUG(DB_PTABLE,"pid to be removed: %d\n",pidrem);
 	KASSERT(rem->pid >= PID_MIN && rem->pid <= PID_MAX);
-	KASSERT(ptable->plist[rem->pid % NPROCS_MAX] != NULL);
+	KASSERT(ptable->plist[pidrem % NPROCS_MAX] != NULL);
 
 	lock_acquire(ptable->pt_lock);
-	rem->proc = NULL;
 	rem->ppid = INV_PROC;
 	rem->pid = INV_PROC;
 	/* do nothing with exit codes, cv, lock, and ninterested will be dealloced in wait */
@@ -304,6 +333,9 @@ proc_destroy(struct proc *proc)
 
 #if OPT_A2
 
+	lock_destroy(proc->p_lock2);
+	cv_destroy(proc->p_waitcv);
+
 	if(proc->p_info != NULL){		//it's in the ptable
 		int result = remove_ptable(proc->p_info);
 		if(result){
@@ -356,9 +388,7 @@ proc_bootstrap(void)
 #endif // UW 
 
 #if OPT_A2
-  ptable = kmalloc(sizeof(*ptable));
-  /* Not sure if I need to initialize plist or not. is it ok to just have the max in the header? */
-  //ptable->plist = kmalloc(sizeof(NPROCS_MAX * sizeof(struct proc*)));
+  ptable = kmalloc(sizeof(struct ptable));
   ptable->pt_lock = lock_create("pt_lock");
   if(ptable->pt_lock == NULL) {
   	lock_destroy(ptable->pt_lock);

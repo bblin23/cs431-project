@@ -76,8 +76,10 @@ struct proc {
 #if OPT_A2
 
 	struct pinfo* p_info;
+	struct lock* p_lock2;
+	struct cv* p_waitcv;
 
-#endif     
+#endif	// OPT_A2
 
 };
 
@@ -102,7 +104,6 @@ struct ptable {
 
 /* This struct will hold all the pid info that is put in the ptable */
 struct pinfo {
-	struct proc *proc;
 	pid_t ppid;
 	pid_t pid;
 	struct cv *waitcv;
@@ -119,7 +120,9 @@ extern struct ptable *ptable;
 void express_interest(pid_t pid);
 void uninterested(pid_t pid);
 bool check_interest(pid_t pid);
-struct pinfo *gen_pinfo(pid_t pid, pid_t ppid, struct proc *new_proc);
+struct pinfo *gen_pinfo(pid_t pid, pid_t ppid);
+pid_t gen_pid(void);
+int getproc_count(void);
 struct pinfo *insert_ptable(struct proc *);
 int remove_ptable(struct pinfo* rem);
 

@@ -451,6 +451,7 @@ static const char *opsmenu[] = {
 #endif
 #if OPT_A2
 	"[dpt]	   Enable ptable debugging   ",
+	"[dsy]	   Enable syscall debugging  ",
 #endif
 	NULL
 };
@@ -558,6 +559,16 @@ cmd_dpt(int n, char **a){
 
 	return 0;
 }
+
+static
+int
+cmd_dsy(int n, char **a){
+	(void)n;
+	(void)a;
+	dbflags = (dbflags | DB_SYSCALL);
+
+	return 0;
+}
 #endif
 
 
@@ -596,6 +607,7 @@ static struct {
 
 #if OPT_A2
 	{ "dpt", 	cmd_dpt },
+	{ "dsy", 	cmd_dsy },
 #endif
 
 #if OPT_SYNCHPROBS

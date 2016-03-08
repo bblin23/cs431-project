@@ -75,7 +75,7 @@
 
 #if OPT_A2
 /* Max number of processes running at a time */
-#define __NPROCS_MAX    128
+#define __NPROCS_MAX    32
 #endif
 
 
