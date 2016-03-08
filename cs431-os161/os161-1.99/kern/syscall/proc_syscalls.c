@@ -56,15 +56,15 @@ void sys__exit(int exitcode) {
   /* note: curproc cannot be used after this call */
   proc_remthread(curthread);
   DEBUG(DB_SYSCALL,"removed thread.\n");
+#if OPT_A2
+  cv_broadcast(p->p_info->waitcv, p->p_info->pinfolock);
+  lock_release(p->p_info->pinfolock);
+#endif
 
   /* if this is the last user process in the system, proc_destroy()
      will wake up the kernel menu thread */
   proc_destroy(p);
 
-#if OPT_A2
-  cv_broadcast(p->p_info->waitcv, p->p_info->pinfolock);
-  lock_release(p->p_info->pinfolock);
-#endif
   DEBUG(DB_SYSCALL,"exiting thread.\n");
   thread_exit();
   /* thread_exit() does not return, so we should never get here */
