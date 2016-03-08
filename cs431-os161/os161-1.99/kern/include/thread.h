@@ -71,6 +71,8 @@ typedef enum {
 
 #if OPT_A2
 
+struct lock *exec_lk;
+
 /* Thread structure. */
 struct thread {
 	/*

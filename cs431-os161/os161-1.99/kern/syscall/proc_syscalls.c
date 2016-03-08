@@ -10,6 +10,10 @@
 #include <addrspace.h>
 #include <copyinout.h>
 
+#include <kern/fcntl.h>
+#include <types.h>
+#include <synch.h>
+#include <vfs.h>
   /* this implementation of sys__exit does not do anything with the exit code */
   /* this needs to be fixed to get exit() and waitpid() working properly */
 
@@ -92,3 +96,148 @@ sys_waitpid(pid_t pid,
   return(0);
 }
 
+
+#if OPT_A2
+
+int sys_execv(char *progname, char **uargs)
+{
+    struct addrspace *as;
+    struct vnode *v;
+    vaddr_t entrypoint, stackptr;
+    int result;
+
+    if(progname == NULL || uargs == NULL) {
+        return EFAULT;
+    }
+
+    char *name;
+    size_t size;
+
+    lock_acquire(exec_lk);   
+
+    // Copy in program name from userspace
+    name = kmalloc(sizeof(char) * PATH_MAX);
+    result = copyinstr((const_userptr_t) progname, name, PATH_MAX, &size);
+    if(result) {
+        kfree(name);
+        return EFAULT;
+    }
+    if(size == 1) {
+        kfree(name);
+        return EINVAL;
+    }
+
+    char **args = kmalloc(sizeof(char **));
+    /*
+    result = copyin((const_userptr_t) uargs, args, sizeof(char **));
+    if(result) {
+        kfree(name);
+        return EFAULT;
+    }
+    */
+
+    // Copy userargs from userspace
+    int i;
+    for(i = 0; uargs[i] != NULL; ++i) {
+        args[i] = kmalloc(sizeof(char) * PATH_MAX);
+        result = copyinstr((const_userptr_t) uargs[i], args[i], PATH_MAX, &size);
+        if(result) {
+            kfree(name);
+            kfree(args);
+            return EFAULT;
+        }
+    }
+    args[i] = NULL;
+    
+    // Open program file
+    result = vfs_open(name, O_RDONLY, 0, &v);
+    if(result) {
+        kfree(name);
+        kfree(args);
+        return result;
+    }
+
+    // Create address space
+    if(curproc_getas() != NULL) {
+        as_destroy(curproc->p_addrspace);
+        curproc->p_addrspace = NULL;
+    }
+
+    as = as_create();
+    if(as == NULL) {
+        kfree(name);
+        kfree(args);
+        vfs_close(v);
+        return ENOMEM;
+    }
+
+    curproc_setas(as);
+    as_activate();
+
+    // Load executable
+    result = load_elf(v, &entrypoint);
+    if(result) {
+        kfree(name);
+        kfree(args);
+        vfs_close(v);
+        return result;
+    }
+    vfs_close(v);
+
+    // Define the user stack in the address space
+    result = as_define_stack(as, &stackptr);
+    if(result) {
+        kfree(name);
+        kfree(args);
+        return result;
+    }
+
+    // Copy arguments to userspace
+    for(i = 0; args[i] != NULL; ++i) {
+        char *arg;
+        int len = strlen(args[i]) + 1;
+
+        // Make sure stackptr is aligned
+        if(len % 4 != 0) {
+            len = len + (4 - len % 4);
+        }
+        arg = kmalloc(sizeof(len));
+        arg = kstrdup(args[i]);
+
+        stackptr -= len;
+
+        result = copyout((const void *) arg, (userptr_t) stackptr, (size_t) len);
+        kfree(arg);
+        if(result) {
+            kfree(name);
+            kfree(args);
+            return result;
+        }
+        
+        args[i] = (char *)stackptr;
+    }
+
+    if(args[i] == NULL) {
+        stackptr -= 4 * sizeof(char);
+    }
+
+    // Copy argument pointers to userspace
+    for(int j = i-1; j >= 0; --j) {
+        stackptr = stackptr - sizeof(char *);
+        result = copyout((const void *) args+j, (userptr_t) stackptr, (sizeof(char *)));
+        if(result) {
+            kfree(name);
+            kfree(args);
+            return result;
+        }
+    }
+
+    lock_release(exec_lk);
+    enter_new_process(i, (userptr_t) stackptr, stackptr, entrypoint);
+
+    // enter_new_process does not return
+	panic("enter_new_process returned\n");
+    return EINVAL;
+}
+
+#endif

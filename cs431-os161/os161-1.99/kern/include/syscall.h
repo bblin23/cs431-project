@@ -66,6 +66,7 @@ int sys_write(int fdesc,userptr_t ubuf,unsigned int nbytes,int *retval);
 int sys_read(int fdesc, userptr_t ubuf, unsigned int nbytes, int*retval);
 int sys_open(userptr_t filename, int flags, int mode, int *retval);
 int sys_close(int fdesc);
+int sys_execv(char *progname, char **uargs);
 #endif
 void sys__exit(int exitcode);
 int sys_getpid(pid_t *retval);

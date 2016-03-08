@@ -53,6 +53,7 @@
 #include <mainbus.h>
 #include <vnode.h>
 
+#include <synch.h>
 #include "opt-synchprobs.h"
 #include "opt-A2.h"
 
@@ -434,6 +435,9 @@ thread_bootstrap(void)
 	/* cpu_create() should have set t_proc. */
 	KASSERT(curthread->t_proc != NULL);
 
+#if OPT_A2
+    exec_lk = lock_create("exec lock");
+#endif
 	/* Done */
 }
 
