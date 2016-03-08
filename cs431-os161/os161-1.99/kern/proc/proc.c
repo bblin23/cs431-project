@@ -51,10 +51,19 @@
 #include <synch.h>
 #include <kern/fcntl.h>  
 
+#include "opt-A2.h"
+#include <limits.h>
+
 /*
  * The process for the kernel; this holds all the kernel-only threads.
  */
 struct proc *kproc;
+
+#if OPT_A2
+
+struct ptable *ptable;
+
+#endif
 
 /*
  * Mechanism for making the kernel menu thread sleep while processes are running
@@ -92,6 +101,8 @@ proc_create(const char *name)
 
 	threadarray_init(&proc->p_threads);
 	spinlock_init(&proc->p_lock);
+	proc->p_lock2 = lock_create("p_lock2");
+	proc->p_waitcv = cv_create("p_waitcv");
 
 	/* VM fields */
 	proc->p_addrspace = NULL;
@@ -103,8 +114,163 @@ proc_create(const char *name)
 	proc->console = NULL;
 #endif // UW
 
+#if OPT_A2
+
+	proc->p_info = NULL;
+
+	if(kproc != NULL)
+		proc->p_info = insert_ptable(proc);
+#endif
+
 	return proc;
 }
+
+#if OPT_A2
+
+void
+express_interest(pid_t pid){
+	ptable->plist[pid % NPROCS_MAX]->ninterested++;
+}
+
+void
+uninterested(pid_t pid){
+	ptable->plist[pid % NPROCS_MAX]->ninterested--;
+}
+
+bool
+check_interest(pid_t pid){
+	KASSERT (ptable->plist[pid % NPROCS_MAX]->ninterested > -1);
+	if(ptable->plist[pid % NPROCS_MAX]->ninterested > 0)
+		return true;
+	else
+		return false;
+}
+
+struct pinfo*
+gen_pinfo(pid_t pid, pid_t ppid, struct proc *new_proc){
+
+	struct pinfo *ret = kmalloc(sizeof(struct pinfo));
+	
+	ret->proc = new_proc;
+	ret->pid = pid;
+	ret->ppid = ppid;
+
+	ret->waitcv = cv_create("pinfo_waitcv");
+	if (ret->waitcv == NULL){
+		kfree(ret);
+		panic("Unable to make pinfo_waitcv");
+		return NULL;
+	}
+
+	ret->pinfolock = lock_create("pinfo_lock");
+	if (ret->pinfolock == NULL){
+		kfree(ret);
+		panic("Unable to make pinfo_lock");
+		return NULL;
+	}
+
+	ret->exited = false;
+	ret->exitcode = 0xBAAD;
+	ret->ninterested = 0;
+	return ret;
+}
+
+pid_t
+gen_pid(void)
+{
+	while (ptable->plist[ptable->nextpid % NPROCS_MAX] != NULL){
+		DEBUG(DB_PTABLE,"pinfo %d is still there!\n", ptable->nextpid);
+		if (ptable->plist[ptable->nextpid % NPROCS_MAX]->exited == true){
+			return ptable->nextpid;
+		}
+		ptable->nextpid++;
+	}
+	DEBUG(DB_PTABLE,"generatedpid = %d\n",ptable->nextpid);
+	return ptable->nextpid;
+}
+
+int
+getproc_count(void){
+	return proc_count;
+}
+
+struct pinfo*
+insert_ptable(struct proc *new_proc)
+{
+
+	KASSERT(new_proc != kproc);
+
+	bool fork = false;
+
+	DEBUG(DB_PTABLE,"Inserting into ptable...\n");
+	
+	lock_acquire(ptable->pt_lock);
+
+	if(proc_count == NPROCS_MAX){
+		lock_release(ptable->pt_lock);
+		panic("ptable is FULL!");
+	}
+
+	/* iterate through pinfos with actual processes */
+	pid_t generatedpid = gen_pid();
+
+	struct pinfo *new_pinfo;
+	if(new_proc->p_info != NULL){ // IF WE ARE DOING FORK
+		fork = true;
+		new_proc->p_info = gen_pinfo(generatedpid, new_proc->p_info->pid, new_proc);
+		ptable->plist[ptable->nextpid % NPROCS_MAX] = new_proc->p_info;
+		proc_count++;
+		DEBUG(DB_PTABLE,"forked pid = %d\n",new_proc->p_info->pid);
+	}else{ //THIS IS AN ENTIRELY NEW PROCESS
+		new_pinfo = gen_pinfo(generatedpid, INV_PROC, new_proc);
+		DEBUG(DB_PTABLE,"new_pinfo->pid = %d\n",new_pinfo->pid);
+		ptable->plist[ptable->nextpid % NPROCS_MAX] = new_pinfo;
+	}
+
+	DEBUG(DB_PTABLE,"Insert done.\n");
+	DEBUG(DB_PTABLE,"PTABLE STATUS: \n");
+	for (int i = 0; i < NPROCS_MAX; i++){
+		if(ptable->plist[i] != NULL)
+			DEBUG(DB_PTABLE,"%d[%d] ",i, ptable->plist[i]->pid);
+		else
+			DEBUG(DB_PTABLE,"%d[ ] ",i);
+
+	}
+	DEBUG(DB_PTABLE,"\n");
+
+	ptable->nextpid++;
+	lock_release(ptable->pt_lock);
+
+	if(fork)
+		return new_proc->p_info;
+	else
+		return new_pinfo;
+
+}
+
+/* Remove the process link, keep pinfo.*/
+int 
+remove_ptable(struct pinfo* rem)
+{
+
+	pid_t pidrem = rem->pid;
+	DEBUG(DB_PTABLE,"pid to be removed: %d\n",pidrem);
+	KASSERT(rem->pid >= PID_MIN && rem->pid <= PID_MAX);
+	KASSERT(ptable->plist[pidrem % NPROCS_MAX] != NULL);
+
+	lock_acquire(ptable->pt_lock);
+	rem->ppid = INV_PROC;
+	rem->pid = INV_PROC;
+	/* do nothing with exit codes, cv, lock, and ninterested will be dealloced in wait */
+	DEBUG(DB_PTABLE,"plist[%d]'s pinfo is REMOVED.\n",(pidrem%NPROCS_MAX));
+	lock_release(ptable->pt_lock);
+
+	return 0;
+}
+
+
+
+#endif
 
 /*
  * Destroy a proc structure.
@@ -166,6 +332,19 @@ proc_destroy(struct proc *proc)
 	threadarray_cleanup(&proc->p_threads);
 	spinlock_cleanup(&proc->p_lock);
 
+#if OPT_A2
+
+	lock_destroy(proc->p_lock2);
+	cv_destroy(proc->p_waitcv);
+
+	if(proc->p_info != NULL){		//it's in the ptable
+		int result = remove_ptable(proc->p_info);
+		if(result){
+			DEBUG(DB_PTABLE,"Couldn't remove ptable entry.");
+		}
+	}
+#endif
+
 	kfree(proc->p_name);
 	kfree(proc);
 
@@ -208,6 +387,18 @@ proc_bootstrap(void)
     panic("could not create no_proc_sem semaphore\n");
   }
 #endif // UW 
+
+#if OPT_A2
+  ptable = kmalloc(sizeof(struct ptable));
+  ptable->pt_lock = lock_create("pt_lock");
+  if(ptable->pt_lock == NULL) {
+  	lock_destroy(ptable->pt_lock);
+  	kfree(ptable);
+ 	panic("Unable to make pt_lock");
+  }
+  ptable->nextpid = PID_MIN;
+
+#endif
 }
 
 /*

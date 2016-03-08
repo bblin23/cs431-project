@@ -37,7 +37,9 @@
 #include <syscall.h>
 
 #include "opt-A2.h"
-
+#include <addrspace.h>
+#include <proc.h>
+#include <synch.h>
 
 /*
  * System call dispatcher.
@@ -152,6 +154,14 @@ syscall(struct trapframe *tf)
 
 	    /* Add stuff here */
  
+
+#if OPT_A2
+	case SYS_fork:
+	  err = sys_fork((struct trapframe *)tf, 
+	  			(pid_t *)&retval);
+	  break;
+#endif
+
 	default:
 	  kprintf("Unknown syscall %d\n", callno);
 	  err = ENOSYS;
@@ -195,8 +205,44 @@ syscall(struct trapframe *tf)
  *
  * Thus, you can trash it and do things another way if you prefer.
  */
+#if OPT_A2
+void
+enter_forked_process(void* data1, unsigned long data2){
+
+	lock_acquire(curproc->p_lock2);
+	cv_wait(curproc->p_waitcv, curproc->p_lock2);
+	//kprintf("===I'M CHILD, MY PID: %d, MY PPID: %d===\n",curproc->p_info->pid, curproc->p_info->ppid);
+	// kprintf("In enter_forked_process.\n");
+	struct trapframe *tf = (struct trapframe *)data1;
+	struct addrspace *as = (struct addrspace *)data2;
+	struct trapframe stack_tf;
+	//kprintf("B4 setting, stack_tf ==\ntf_a3: %d\ntf_v0: %d\ntf_epc: %d\n", stack_tf.tf_a3, stack_tf.tf_v0, stack_tf.tf_epc);
+	//kprintf("B4 setting, *tf ==\ntf_a3: %d\ntf_v0: %d\ntf_epc: %d\n", tf->tf_a3, tf->tf_v0, tf->tf_epc);
+	stack_tf = *tf;
+	stack_tf.tf_a3 = 0; /* Successful syscall */
+	stack_tf.tf_v0 = 0; /* Child's return pid */
+	stack_tf.tf_epc += 4;
+	//kprintf("COPYING as INTO curproc as \nas: 0x%x\ncurproc as: 0x%x\n",(int)as, (int)curproc->p_addrspace);
+	// memcpy(curproc->p_addrspace, (const void*)as, (size_t)sizeof(struct addrspace));
+	// as_copy(as, &(curproc->p_addrspace));
+	curproc->p_addrspace = as;
+	as_activate();
+	//kprintf("AFTER COPYING as INTO curproc as \nas: 0x%x\ncurproc as: 0x%x\n",(int)as, (int)curproc->p_addrspace);
+
+
+	//kprintf("AF setting, stack_tf ==\ntf_a3: %d\ntf_v0: %d\ntf_epc: %d\n", stack_tf.tf_a3, stack_tf.tf_v0, stack_tf.tf_epc);
+
+	//kprintf("Going into usermode.\n");
+
+	lock_release(curproc->p_lock2);
+
+	mips_usermode(&stack_tf);
+}
+
+#else
 void
 enter_forked_process(struct trapframe *tf)
 {
 	(void)tf;
 }
+#endif
