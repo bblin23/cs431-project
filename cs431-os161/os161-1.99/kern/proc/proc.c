@@ -147,10 +147,11 @@ check_interest(pid_t pid){
 }
 
 struct pinfo*
-gen_pinfo(pid_t pid, pid_t ppid){
+gen_pinfo(pid_t pid, pid_t ppid, struct proc *new_proc){
 
 	struct pinfo *ret = kmalloc(sizeof(struct pinfo));
 	
+	ret->proc = new_proc;
 	ret->pid = pid;
 	ret->ppid = ppid;
 
@@ -216,12 +217,12 @@ insert_ptable(struct proc *new_proc)
 	struct pinfo *new_pinfo;
 	if(new_proc->p_info != NULL){ // IF WE ARE DOING FORK
 		fork = true;
-		new_proc->p_info = gen_pinfo(generatedpid, new_proc->p_info->pid);
+		new_proc->p_info = gen_pinfo(generatedpid, new_proc->p_info->pid, new_proc);
 		ptable->plist[ptable->nextpid % NPROCS_MAX] = new_proc->p_info;
 		proc_count++;
 		DEBUG(DB_PTABLE,"forked pid = %d\n",new_proc->p_info->pid);
 	}else{ //THIS IS AN ENTIRELY NEW PROCESS
-		new_pinfo = gen_pinfo(generatedpid, INV_PROC);
+		new_pinfo = gen_pinfo(generatedpid, INV_PROC, new_proc);
 		DEBUG(DB_PTABLE,"new_pinfo->pid = %d\n",new_pinfo->pid);
 		ptable->plist[ptable->nextpid % NPROCS_MAX] = new_pinfo;
 	}
