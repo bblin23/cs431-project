@@ -134,7 +134,7 @@ sys_waitpid(pid_t pid,
       return ESRCH;
   }
 
-  /* If process does not already exited */
+  /* If process is not already exited */
   if (ptable->plist[pid % NPROCS_MAX]->exited == true){
       *retval = -1;
       return ESRCH;
@@ -363,6 +363,7 @@ sys_fork(struct trapframe *parenttf,
   /* Allocate space for child trapframe */
   struct trapframe *childtf = kmalloc(sizeof(struct trapframe));
   if (childtf == NULL){
+    kfree(childtf);
     spl = spl0();
     DEBUG(DB_SYSCALL,"NO MORE MEMORY\n");
     return ENOMEM;
@@ -372,15 +373,28 @@ sys_fork(struct trapframe *parenttf,
 
   /* Allocate space for child process */
   struct proc *childproc = kmalloc(sizeof(struct proc));
+  if (childproc == NULL){
+    kfree(childproc);
+    spl = spl0();
+    return ENOMEM;
+  }
   /* Use memcpy to copy the parent's process attributes into child's process */ 
   memcpy((void *)childproc, (const void *)parentproc, (size_t)sizeof(struct proc));
 
   lock_acquire(childproc->p_lock2);
 
   struct addrspace *childads = kmalloc(sizeof(struct addrspace));
+  if(childads == NULL){
+    kfree(childads);
+    lock_release(childproc->p_lock2);
+    spl = spl0();
+    return ENOMEM;
+  }
   /* as_copy the parent's address space into the child's */
   err = as_copy(parentproc->p_addrspace, &childads);
   if (err){
+    kfree(childads);
+    lock_release(childproc->p_lock2);
     spl = spl0();
     return err;
   }
@@ -398,6 +412,10 @@ sys_fork(struct trapframe *parenttf,
   err = thread_fork("child thread", childproc, enter_forked_process, 
     childtf, (unsigned long) childads);
   if (err){
+    kfree(childtf);
+    kfree(childads);
+    kfree(childproc);
+    lock_release(childproc->p_lock2);
     spl = spl0();
     return err;
   }
